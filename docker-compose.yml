@@ -1,0 +1,27 @@
+version: '3.4'
+
+networks:
+     urlShortnerNetwork:
+services:
+   urlshortnerappDB:
+          container_name: "urlshortnerappDB"
+          image: mcr.microsoft.com/mssql/server:2022-latest
+          ports:
+            - 8002:1433
+          environment:
+          - ACCEPT_EULA=Y
+          - MSSQL_SA_PASSWORD=P@ssword@123
+          networks:
+          - urlShortnerNetwork
+   urlshortner:   
+    container_name: urlShortnerapp 
+    ports:
+      - 8001:80 
+    image: ${DOCKER_REGISTRY-}urlshortner
+    build:
+      context: .
+      dockerfile: UrlShortner/Dockerfile
+    depends_on: 
+     - urlshortnerappDB
+    networks:
+    - urlShortnerNetwork
