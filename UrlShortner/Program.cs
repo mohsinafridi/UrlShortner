@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using UrlShortner.Services;
 using UrlShortner.Entities;
 using UrlShortner.Extensions;
+using UrlShortner.Handler;
+
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
@@ -15,6 +17,15 @@ x.UseSqlServer(builder.Configuration.GetConnectionString("Database")));
 
 
 builder.Services.AddScoped<UrlShorteningService>();
+
+
+builder.Services.AddScoped<IMyService,MyService>();
+builder.Services.AddTransient<LoggingHandler>();
+builder.Services.AddHttpClient<IBoredApiClient, BoredApiClient>(client =>
+{
+    client.BaseAddress = new Uri("https://www.boredapi.com/api");
+}).AddHttpMessageHandler<LoggingHandler>();
+
 var app = builder.Build();
 
 
@@ -70,6 +81,14 @@ app.MapGet("api/{code}",async (string code,ApplicationContext dbContext) => {
     }
 
     return Results.Redirect(shortUrl.LongUrl);
+});
+
+
+app.MapGet("api/activity", async (CancellationToken cancellationToken,IMyService service) => {
+    
+    ActivityModel modelResponse = await service.GetActivityAsyn(cancellationToken);
+
+    return Results.Ok(modelResponse);
 });
 
 app.UseHttpsRedirection();

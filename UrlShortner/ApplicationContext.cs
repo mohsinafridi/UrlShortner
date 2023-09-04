@@ -12,6 +12,8 @@ namespace UrlShortner
         }
 
         public DbSet<ShortenedUrl> ShortenedUrl { get; set; }
+        public DbSet<ApiLog> ApiLogs { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<ShortenedUrl>(builder =>
