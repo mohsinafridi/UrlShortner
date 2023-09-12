@@ -5,9 +5,15 @@ using UrlShortner.Services;
 using UrlShortner.Entities;
 using UrlShortner.Extensions;
 using UrlShortner.Handler;
-
+using Serilog;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog
+builder.Host.UseSerilog((context,configuration)=>
+configuration.ReadFrom.Configuration(context.Configuration));
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -23,7 +29,7 @@ builder.Services.AddScoped<IMyService,MyService>();
 builder.Services.AddTransient<LoggingHandler>();
 builder.Services.AddHttpClient<IBoredApiClient, BoredApiClient>(client =>
 {
-    client.BaseAddress = new Uri("https://www.boredapi.com/api");
+    client.BaseAddress = new Uri("http://www.boredapi.com/api/activity");
 }).AddHttpMessageHandler<LoggingHandler>();
 
 var app = builder.Build();
@@ -37,17 +43,19 @@ if (app.Environment.IsDevelopment())
     app.ApplyMigrations();
 }
 
+app.UseSerilogRequestLogging();
 
 app.MapPost("api/shorten", async (
+    ILogger<Program> _logger,
     ShortenUrlRequest request,
     UrlShorteningService urlShorteningService,
     ApplicationContext _dbContext,
-    HttpContext _httpContext
-    
+    HttpContext _httpContext    
     ) =>
 {
     if (!Uri.TryCreate(request.Url, UriKind.Absolute, out _))
     {
+        _logger.LogInformation("The specified URL is not valid");
         return Results.BadRequest("The specified URL is not valid.");
     }
 
@@ -62,6 +70,7 @@ app.MapPost("api/shorten", async (
         CreateAtUtc = DateTime.UtcNow,
     };
 
+    _logger.LogInformation("Short Url Created",shorUrlObj.ToString());
     _dbContext.ShortenedUrl.Add(shorUrlObj);
 
     await _dbContext.SaveChangesAsync();
@@ -84,9 +93,11 @@ app.MapGet("api/{code}",async (string code,ApplicationContext dbContext) => {
 });
 
 
-app.MapGet("api/activity", async (CancellationToken cancellationToken,IMyService service) => {
+app.MapGet("api/activity", async (CancellationToken cancellationToken,IMyService service, ILogger<Program> _logger) => {
     
     ActivityModel modelResponse = await service.GetActivityAsyn(cancellationToken);
+
+    _logger.LogInformation($"Get Response:: Activity {modelResponse}");
 
     return Results.Ok(modelResponse);
 });
