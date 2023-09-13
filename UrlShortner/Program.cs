@@ -16,7 +16,13 @@ configuration.ReadFrom.Configuration(context.Configuration));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
+builder.Services.AddOutputCache(options =>
+{
+    options.AddBasePolicy(builder => builder.Expire(TimeSpan.FromSeconds(15)));
+    options.AddPolicy("Expires10", builder => builder.Expire(TimeSpan.FromSeconds(10)).SetVaryByQuery("city"));
+    options.AddPolicy("Expires20", builder => builder.Expire(TimeSpan.FromSeconds(20)));
+    options.AddPolicy("NoCache",builder => builder.NoCache());
+});
 
 builder.Services.AddDbContext<ApplicationContext>(x =>
 x.UseSqlServer(builder.Configuration.GetConnectionString("Database")));
@@ -44,6 +50,36 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseSerilogRequestLogging();
+
+
+var summaries = new[]
+{
+    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+};
+
+app.MapGet("/etag", async (context) =>
+{
+    var etag = $"\"{Guid.NewGuid():n}\"";
+    context.Response.Headers.ETag = etag;
+    await context.Response.WriteAsync("hello");
+}).CacheOutput("Expires10");
+
+app.MapGet("/weatherforecast", async () =>
+{
+    await Task.Delay(1000);
+    var forecast = Enumerable.Range(1, 5).Select(index =>
+        new WeatherForecast
+        (
+            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+            Random.Shared.Next(-20, 55),
+            summaries[Random.Shared.Next(summaries.Length)]
+        ))
+        .ToArray();
+    return forecast;
+})
+.CacheOutput("Expires10");
+//CacheOutput(p => p.VaryByQuery("city"));
+
 
 app.MapPost("api/shorten", async (
     ILogger<Program> _logger,
@@ -80,8 +116,9 @@ app.MapPost("api/shorten", async (
 
 // Get 
 
-app.MapGet("api/{code}",async (string code,ApplicationContext dbContext) => {
-    
+app.MapGet("api/{code}", async (string code, ApplicationContext dbContext) =>
+{
+
     var shortUrl = await dbContext.ShortenedUrl.FirstOrDefaultAsync(x => x.Code == code);
 
     if (shortUrl is null)
@@ -93,16 +130,24 @@ app.MapGet("api/{code}",async (string code,ApplicationContext dbContext) => {
 });
 
 
-app.MapGet("api/activity", async (CancellationToken cancellationToken,IMyService service, ILogger<Program> _logger) => {
-    
+app.MapGet("api/activity", async (CancellationToken cancellationToken, IMyService service, ILogger<Program> _logger) =>
+{
+
     ActivityModel modelResponse = await service.GetActivityAsyn(cancellationToken);
 
     _logger.LogInformation($"Get Response:: Activity {modelResponse}");
 
     return Results.Ok(modelResponse);
-});
+}).CacheOutput();
 
 app.UseHttpsRedirection();
 
+app.UseOutputCache();
+
 app.Run();
 
+
+internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+{
+    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+}
